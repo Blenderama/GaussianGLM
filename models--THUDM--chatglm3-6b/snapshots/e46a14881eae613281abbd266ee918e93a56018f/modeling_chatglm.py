@@ -46,12 +46,10 @@ CHATGLM_6B_PRETRAINED_MODEL_ARCHIVE_LIST = [
 ]
 
 
-def hook(module, ix, ox):
-    print([x.shape for x in ix])
-    print([x.max() for x in ix])
-    print([x.min() for x in ix])
-    print(ix)
-        
+def gauss(x,mu,sigma): 
+    #mu 平均值，sigma:标准差
+    return 1/(sigma*np.sqrt(2*np.pi))*np.exp(-(x-mu)**2/(2*sigma**2))
+    #概率密度函数        
         
 def default_init(cls, *args, **kwargs):
     return cls(*args, **kwargs)
@@ -761,7 +759,7 @@ class ChatGLMModel(ChatGLMPreTrainedModel):
         self.rotary_pos_emb = RotaryEmbedding(rotary_dim // 2, original_impl=config.original_rope, device=device,
                                               dtype=config.torch_dtype)
         self.encoder = init_method(GLMTransformer, config, **init_kwargs)
-        self.output_layer = init_method(nn.Linear, config.hidden_size, config.padded_vocab_size, bias=False,
+        self.output_layer = init_method(nn.Linear, config.hidden_size, 2, bias=False,
                                         dtype=config.torch_dtype, **init_kwargs)
         self.pre_seq_len = config.pre_seq_len
         self.prefix_projection = config.prefix_projection
@@ -957,8 +955,9 @@ class ChatGLMForConditionalGeneration(ChatGLMPreTrainedModel):
         if return_last_logit:
             hidden_states = hidden_states[-1:]
         lm_logits = self.transformer.output_layer(hidden_states)
-        lm_logits = lm_logits.transpose(0, 1).contiguous()
-
+        gauss_coef = lm_logits.transpose(0, 1).contiguous()
+        input_x = torch.tensor(range(-10,11)).view(1, 1, -1).repeat(gauss_coef.shape[0],gauss_coef.shape[1],1).to(gauss_coef.device)
+        lm_logits = gauss(input_x ,gauss_coef[:,:,0].unsqueeze(-1), gauss_coef[:,:,1].unsqueeze(-1))
         loss = None
         if labels is not None:
             lm_logits = lm_logits.to(torch.float32)
